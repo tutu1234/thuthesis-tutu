@@ -1,0 +1,96 @@
+\thusetup{
+  %******************************
+  % 注意：
+  %   1. 配置里面不要出现空行
+  %   2. 不需要的配置信息可以删除
+  %******************************
+  %
+  %=====
+  % 秘级
+  %=====
+  secretlevel={秘密},
+  secretyear={10},
+  %
+  %=========
+  % 中文信息
+  %=========
+  ctitle={工业时间序列数据的特征学习\	\ 技术研究与应用},
+  cdegree={工程硕士},
+  cdepartment={软件学院},
+  cmajor={软件工程},
+  cauthor={胡志坤},
+  csupervisor={邓仰东副研究员},
+  %cassosupervisor={陈文光教授}, % 副指导老师
+  %ccosupervisor={某某某教授}, % 联合指导老师
+  % 日期自动使用当前时间，若需指定按如下方式修改：
+   cdate={二〇一九年五月},
+  %
+  % 博士后专有部分
+  cfirstdiscipline={计算机科学与技术},
+  cseconddiscipline={系统结构},
+  postdoctordate={2009年7月——2011年7月},
+  id={编号}, % 可以留空： id={},
+  udc={UDC}, % 可以留空
+  catalognumber={分类号}, % 可以留空
+  %
+  %=========
+  % 英文信息
+  %=========
+  etitle={Research and Application on Industrial Time Series Data Feature Learning},
+  % 这块比较复杂，需要分情况讨论：
+  % 1. 学术型硕士
+  %    edegree：必须为Master of Arts或Master of Science（注意大小写）
+  %             “哲学、文学、历史学、法学、教育学、艺术学门类，公共管理学科
+  %              填写Master of Arts，其它填写Master of Science”
+  %    emajor：“获得一级学科授权的学科填写一级学科名称，其它填写二级学科名称”
+  % 2. 专业型硕士
+  %    edegree：“填写专业学位英文名称全称”
+  %    emajor：“工程硕士填写工程领域，其它专业学位不填写此项”
+  % 3. 学术型博士
+  %    edegree：Doctor of Philosophy（注意大小写）
+  %    emajor：“获得一级学科授权的学科填写一级学科名称，其它填写二级学科名称”
+  % 4. 专业型博士
+  %    edegree：“填写专业学位英文名称全称”
+  %    emajor：不填写此项
+  edegree={Master of Engineering},
+  emajor={Software Engineering},
+  eauthor={Huang Fanling},
+  esupervisor={Associate Research Fellow Deng Yangdong},
+  %eassosupervisor={Chen Wenguang},
+  % 日期自动生成，若需指定按如下方式修改：
+  edate={May, 2018},
+  %
+  % 关键词用“英文逗号”分割
+  ckeywords={时间序列,特征学习,符号回归,临界相变,生成式对抗网络},
+  ekeywords={Time Series,Feature Learning,Symbolic Regression,Critical Transitions,Generative Adversarial Networks}
+}
+% 定义中英文摘要和关键字
+\begin{cabstract}
+  
+  “工业4.0”的提出使大量工业数据得到有效的采集、传输和存储。其中时间序列数据是工业数据的重要表现形式，然而高维、高噪、时变等特性使其难以被开采利用。特征学习是数据得以有效利用的关键，一直是研究的热点和难点。本文主要针对时间序列数据的特征学习方法以及其在工业装备运维中的作用进行系统研究。首先针对以轴温为代表的设备正常运行数据，开展机理挖掘并实现状态估计；然后引入复杂系统临界相变理论，发现通用的失效早期预警特征并实现故障预测；最后基于生成式对抗网络，实现无监督式时间序列通用特征学习并支持分类任务。
+
+  现有数据驱动的故障预测方法主要针对任务直接建模，缺乏对系统机理的认识。本文关注到基于符号回归的系统辨识方法具有系统结构表达能力。由此，利用以轴温为代表的设备正常运行数据展开研究，提出了基于符号回归的系统结构特征学习方法，并融合确定性优化算法和遗传算法完成训练，揭示了系统运行机理；进一步，本文将最优系统结构模型作为系统运行时的健康基线，设计了在线实时异常检测框架。此工作在一定程度上弥补了现有方法的不足。
+
+  工业系统的故障数据普遍存在小样本、不完备的特性。现有系统失效特征学习方法大多针对特定系统建模，普适性较差。本文提出了基于复杂系统临界相变理论的早期预警特征学习方法，首先挖掘时间序列的随机波动信号，然后在此基础上学习失效早期预警特征，接下来通过多种方法检验系统失效与临界相变的一致性。最后针对早期预警特征，本文提出了关键跳变检测算法实现故障预测。利用 4 种不同类型的工业数据集展开实验，证明了方法的有效性和通用性。此工作为研究通用方法来预测由工业系统失效引起的潜在灾难提供了新视角。
+
+  工业时间序列标记数据获取难的问题严重限制了监督式学习方法的应用。生成式对抗网络（Generative Adversarial Nets, GAN）是实现无监督式学习的新道路，但鲜有针对时间序列的模型。本文提出了时间序列生成式对抗网络（Time Series GAN,TSGAN），并以无监督的方式完成训练，利用85个公开的时间序列数据集展开实验。一方面，TSGAN 的生成器学习了真实数据集的分布，并生成逼真的多样化的时间序列;另一方面，将TSGAN的判别器作为特征转换器与简单分类器结合构建了半监督式分类框架，并取得优秀效果。此工作为无监督式时间序列特征学习以及基于此的半监督式学习提供了新思路。
+
+
+\end{cabstract}
+
+% 如果习惯关键字跟在摘要文字后面，可以用直接命令来设置，如下：
+% \ckeywords{\TeX, \LaTeX, CJK, 模板, 论文}
+
+\begin{eabstract}
+
+The proposal of "Industry 4.0" enables a large number of industrial data to be effectively collected, transmitted and stored. Time-series data is the most significant resource to reflect the performance of operating industrial systems. However, it is hard to utilize time-series data because of its characteristics of high dimension, heavy noise and time variance. It has always been a challenging but active research subject to learn valuable features from messy time-series data. This thesis mainly studies time-series feature learning and its role in the maintenance of industrial equipments. Firstly, aiming at the normal running data of equipments represented by bearing temperature, mechanism mining is carried out and accurate state estimation is realized. Secondly, the critical transition theory of complex systems is introduced to discover the common early warning features of failure and support the realization of fault prognostics. Finally, based on the generative adversarial network (GAN), the unsupervised time-series general feature learning model is proposed and further supports the classification task. 
+
+The existing data-driven fault prognostics methods are mainly aimed at direct modeling of tasks and lack understanding of the system mechanism. This thesis focuses on the symbolic regression based system identification, which has the ability to distill the mathematical equation from the data directly. Therefore, the normal running data of equipments represented by bearing temperature was used to carry out the research, a framework based on symbolic regression was proposed for system structure feature learning, and deterministic optimization algorithm and genetic algorithm were combined to conduct the training process. The structure feature revealed the system mechanism and the interaction relationship among signals. Furthermore, the optimal structure model was used as the health baseline to support the design of an online real-time anomaly detection framework. This work has made up for the shortcomings of the existing methods to some extent.
+
+The failure data of industrial systems generally has the characteristics of small sample and incompleteness. Most of the existing methods of system failure feature learning are aimed at specific systems and have poor universality. This thesis proposed an early warning feature learning method based on the critical transition theory of complex systems. Firstly, the inherent random fluctuation signals of time-series were mined, and based on this, the early warning feature of failure was learned, then the consistency between system failure and critical transition were verified by various methods. Finally, this thesis proposed a key jump detection algorithm to make use of early warning feature to realize fault prognostics. Experiments were carried out on four different types of industrial data sets, which proved the universality and effectiveness of the method. Such a discovery gives a new perspective towards a generic methodology to predict and prevent potential disasters caused by the failure of industrial systems. 
+
+The difficulty in obtaining industrial time-series labelled data seriously limits the application of supervised learning methods. GAN is a new way to realize unsupervised learning, but there are few models for time-series. In this thesis, Time-Series GAN (TSGAN) was proposed and the training process was conducted in an unsupervised way. Experiments were carried out using 85 benchmark time-series datasets. On one hand, the generator of TSGAN can effectively learn the distribution of time-series datasets and generate realistic and diversified time-series. On the other hand, the discriminator of TSGAN as a feature encoder was combined with simple classifiers to form a semi-supervised time-series classification framework, which gains excellent result. This work provides a new idea for unsupervised time-series feature learning and semi-supervised machine learning based on it.
+
+\end{eabstract}
+
+% \ekeywords{\TeX, \LaTeX, CJK, template, thesis}

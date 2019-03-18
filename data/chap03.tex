@@ -1,0 +1,610 @@
+% !TEX root = ../main.tex
+
+\chapter{基于符号回归的系统结构特征学习与应用}
+\label{chap:symbolic-regression}
+
+\section{引言}
+\label{sec:sr-intro}
+
+铁路运输具有规模大、经济、节能等优势使其在人类社会中扮演着重要角色\cite{2015年交通运输行业发展统计公报}。高速列车是典型的工业系统，本章主要针对以轴温为代表的设备正常状态数据——高速列车轴承温度正常状态数据，开展数据驱动的机理挖掘研究。
+%以中国铁路运输为例，支持中国25\%的运输量，能源消耗仅占所有运输方式总消耗的6\%\cite{2015年交通运输行业发展统计公报}
+
+% PHM 技术在实际应用中的局限。
+故障预测是 PHM 的核心要义，基于模型的故障预测方法，机理知识清晰、预测精度高，然而局限于系统机理透明并且对精度要求很高的领域；
+数据驱动的故障预测方法，具有良好的灵活性便于实际应用，然而现有方法大多针对任务直接建模，缺乏对系统机理的认识\cite{lee2014prognostics,彭宇2010故障预测与健康管理技术综述}。再者，PHM 技术在机车系统中的应用仍存在诸多挑战：（a）现代机车已演变成高度复杂的工程机械，其正常运行需要依赖多个学科的统一，涉及力学、热力学、机电、电子、计算机和控制工程；（b）不同的运输目标和环境要求机车模型必须具备多样化特性，实际上机车服务年限已长达30年，系统化的PHM方案必须能应对多种机车组的不同需求；（c）制造业的全球化进程和复杂的设备所有权关系使建立全面的知识库面临巨大困难。
+%（1）现代机车已演变成高度复杂的工程机械，其正常运行需要依赖多个物理学科的统一，涉及力学（ Mechanics）、热力学（Thermodynamics）、机电（Electromechanics）、电子（Electronics）、计算机（Computers）和控制工程（Control engineering）。
+
+一方面，本文通过实际调研发现，来自不同传感器和/或不同车轴的信号存在强相关性。如图\ref{fig:csd-early-warning-structure}，复杂系统的结构特征分为两种，其中同构性特征适用于各局部之间存在强关联的系统\cite{jiang2006discovering,han2015time}。另一方面，符号回归系统辨识方法已受到广泛关注\cite{schmidt2009distilling,la2016automatic,mcconaghy2011ffx,fortin2012deap}，具有纯数据驱动、对非线性系统的抽象能力、可同时实现结构选择和参数学习等诸多优势，并且其所学系统方程具备良好的系统结构表达能力。
+
+综上所述，本章首先提出基于符号回归的系统结构特征学习方法，并融合确定性优化算法和遗传算法完成训练，由此揭示系统的底层物理机理。然后将所学系统结构特征作为健康基线，设计在线实时异常检测框架。
+  
+%We prove that modern data mining techniques are able to identify the internal dynamics of bearing through the temperature data and perform accurate prediction.
+
+%In this work, we develop a hot-axle prediction and analysis framework. The framework is deployed in the locomotive monitoring data center to perform online fault prediction and diagnosis. It takes the multivariate sensor time series as input. The details of sensor data are listed in Table 1
+
+%Different from existing data driven PHM studies, which typically use experimental data to extract patterns for anomaly detection/prediction under the guidance of domain knowledge, our framework performs online and off-line fault prediction by exploiting sensor data collected during regular operations. We prove that modern data mining techniques are able to identify the internal dynamics of bearing through the temperature data and perform accurate prediction
+
+\section{数据采集}
+
+%axle：轮轴（车轴），bearing：轴承
+
+（1）数据采集装置
+
+% 并且近年来已有研究工作关注热轮轴温度的预测问题\cite{ma2016prediction,yi2015faults,amini2016wayside}，在一定程度上说明温度数据对系统性能的敏感性
+% “中国机车远程监测与诊断系统”
+如图\ref{fig:sr-data-collect}是机车和数据采集环境。实际工程中温度传感器已得到广泛部署，温度数据最为丰富。一辆机车有6个轮轴，每个轮轴配置8个传感器，这些传感器都统一配置为温度传感器。每个轮轴的8个传感器被部署于不同位置，其中2个分别放置于轮轴两端以感知环境温度，剩下的6个传感器均匀的分配到轮轴的2个轴承上。每个轴承有3个传感器，分别部署在轴承的左上方、上方和右上方。除了关键的轴承温度外，本文还采集了火车管道压力、停车制动压力、平衡油缸压力、火车管流和机车运行速度数据，具体的数据说明见表\ref{tab:sr-variables}。
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{figures/sr-data-collect.png}
+\caption{机车和数据采集设备}
+\label{fig:sr-data-collect}
+\end{figure}
+
+\begin{table}[htbp]
+  \centering
+  \caption{高速列车走行部的多元时间序列数据}
+  \label{tab:sr-variables}
+  \begin{tabular}{cc}
+    \toprule
+    {\heiti 变量名} & {\heiti 描述} \\\midrule[1pt]
+    ZD\_LCG & 火车管道压力 \\
+      ZD\_TFG & 停车制动压力 \\
+      ZD\_JHG & 平衡油缸压力 \\
+      ZD\_LLJ & 火车管流 \\
+      ZD\_SPEED & 机车运行速度 \\
+      ZD\_HW\_N\_1 & 轴承 N 左边的环境温度 \\
+      ZD\_HW\_N\_2 & 轴承 N 右边的环境温度 \\
+      ZD\_WD\_N\_Y & 轴承 N 在位置 Y 的温度 
+    \\\bottomrule
+  \end{tabular}\\[1.5pt]
+\end{table}
+
+（2）数据分析
+
+1. 数据预处理
+
+本文数据预处理主要由三部分组成。（a）数据集成：汇总不同维度的传感器数据并进行时间对标以保证数据的一致性。（b）数据清洗：本文首先基于少量先验知识去掉明显冗余的数据。针对传感器在数据采集过程中由于受到复杂环境的影响，存在数据丢失和噪音的情况，本文通过平滑处理方法消除干扰噪音（比如去除固定幅度和时间间隔的周期性波动噪音）。（c）重采样：实际采样频率因复杂环境因素不同而不同、再者数据存在缺失和噪音，无法满足符号回归方法中时间序列等间隔采样的前提假设
+。对此本文采用适当的重采样技术对传感器时间序列进行预处理以保证各采样点之间保持相等的时间间隔\cite{good2006resampling}，通过多次实验验证发现高斯插值对数据处理的效果最好。
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{figures/sr-data-temp.png}
+\caption{不同高速列车不同观测点的温度数据}
+\label{fig:sr-data-temp-corr}
+\end{figure}  
+
+2. 数据探索
+
+本文对若干机车组三个月的温度数据进行探索，利用多种可视化方法或工具对数据进行理解、通过先进的时间序列分析方法检查温度数据的稳定性和相关性，具体方法细节参考Bisgaard 等人的著作\cite{bisgaard2011time}。主要有以下发现：
+\begin{itemize}
+  \item 温度数据的采样率在1/10Hz到10Hz之间。
+  \item 环境和车轴温度具有时变和不稳定的性质。事实上，轴承的内部动态性会根据不同的工作模式而改变。
+  \item 轴承内部温度由\ref{eq:data-temp-generate}解析式决定\cite{陈德生2003列车轴温规律及红外线轴温探测方式的研究}。车轴的最大稳定温度为$t_{stable}$，由以下几个因素决定，车轴直径和车轮直径的比值 $(\frac{D_{axle}}{D_{wheel}})$，车轴盒压力 (\emph{P})，机车速度 (\emph{V})，摩擦因子(\emph{f})，和散热能力$(\sum {\alpha_{i}F_{i}})$的倒数。车轴盒表面的温度上升速度为\emph{m}，由散热能力$(\sum {\alpha_{i}F_{i}})$和热吸收能力$\sum {C_{i}P_{i}}$的比值决定。$t_{raise}$表示温度上升遵循指数方程。
+  \item 轴承内部状态通常无法直接探测。不同位置感知的温度数据由影响轴承状态的多种因素决定，包括但不仅限于机车的工作状态（比如，运行速度和牵引水平），传感器和轴承的相对位置，环境因素（比如环境温度和路线特点），以及其他多种外部干扰因素（比如空调系统的散热）。总的来说，来自不同传感器和/或不同车轴的数据存在强相关性但相关的模式会因工作状态的改变而变化。如图\ref{fig:sr-data-temp-corr}所示，不同列车的车轴温度数据形状各异，但不同轴位点之间的温度数据存在强相关性。
+  \item 传感器数据存在高噪的特性。传感器工作过程中会受到多个噪音源的影响，比如来自车载空调系统的排气口的影响。
+  \item 轴承失效模式具有高度复杂性。在当前的机车上，当传感器测量值超过预设阈值时车载监控系统将产生失效报告。然而，这样基于域值的方案无法用于预防性维修。此外，一个固定的域值无法覆盖所有失效模式。事实上，温度梯度的上升和多种温度亚域值峰值可以反应系统失效。
+\end{itemize}
+\begin{equation}
+\label{eq:data-temp-generate}
+\left\{\begin{array}{l}
+t_{stable} = \frac{D_{axle}\ast P\ast f \ast V}{D_{wheel}\ast \sum \alpha_{i}F_{i}}  \\[0.2cm]
+t_{raise} = t_{stable}\ast (1-e^{-m\tau}) \\[0.2cm]
+t_{sink} = t_{stable} \ast e^{-m\tau} \\[0.2cm]
+m = \frac{\sum \alpha_{i}f_{i}}{\sum C_{i}P_{i}}
+\end{array}\right.
+\end{equation}
+
+\section{系统结构特征学习}
+\label{sec:sr-feature}
+
+（1）符号和变量定义
+
+\begin{itemize}
+
+  \item 令小写字母黑体表示向量，即$\mathbf{a,b,c,d,...,x,y,z}$。
+
+  \item 令大写字母黑体表示矩阵，即$\mathbf{A,B,C,D,...,X,Y,Z}$。
+
+  \item 假设数据采样点为$\mathbf{t}=[t_{1},t_{2},...,t_{n}]$，以时间为单位非递减有序，默认等间隔。
+
+  \item 假设一次采样结果为$(\mathbf{X},\mathbf{y})$，其中$\mathbf{X}$为{\heiti 因变量}，$\mathbf{y}$为{\heiti 目标变量}。
+  因变量$ \mathbf{X} \in R^{n\times m} $定义为\ref{equ:sr-object-func-x}，是\emph{n}行和\emph{m}列矩阵，\emph{n}行表示对应$\mathbf{t}$的\emph{n}个时刻的观测结果，\emph{m}列表示\emph{m}个不同观测变量。
+  目标变量$\mathbf{y}$定义为\ref{equ:sr-object-func-y}，是对应$\mathbf{t}$的\emph{n}个时刻的观测结果。
+
+  \item 假设有{\heiti 运算子}集合$\mathbf{P}$，定义如\ref{equ:sr-ops}，其中每个元素表示一个基本的算数运算。当前运算包括：
+  加法运算$add(\mathbf{x,y})$表示两个输入向量的和，即返回$\mathbf{x}+\mathbf{y}$；
+  减法运算$sub(\mathbf{x,y})$，表示两个输入向量的差，即返回$\mathbf{x}-\mathbf{y}$；
+  乘法运算$mul(\mathbf{x,y})$，表示两个输入向量的点积，即返回$\mathbf{x} * \mathbf{y}$；
+  除法运算$divide(\mathbf{x,y})$，表示两个输入向量的商，即返回$\mathbf{x}/\mathbf{y}$；
+  正弦运算$sin(\mathbf{x})$，返回输入向量的正弦运算结果；
+  余弦运算$cos(\mathbf{x})$，返回输入向量余弦运算结果；
+  对数运算$log(\mathbf{x}, i) $，返回输入向量的对数运算结果，即返回$log_{i}(\mathbf{x})$；
+  幂运算$pow(\mathbf{x}, i)$，返回输入向量的幂运算结果，即返回$\mathbf{x}^{i}$；
+  取最大值运算$max(\mathbf{x})$，返回输入向量的最大值；
+  取最小值运算$min(\mathbf{x})$，返回输入向量的最小值。
+  \item 基函数向量$\mathbf{\Psi}$，定义如\ref{equ:sr-basefunc}，一共有$n_{b}$个元素，其中每个元素$\varphi_{i}$表示一个{\heiti 基函数}，基函数是由运算子集合$\mathbf{P}$中若干个运算子构成的线性或非线性复杂函数。
+
+\end{itemize}
+\begin{subequations}
+\begin{align}
+\mathbf{X} &= \begin{bmatrix}
+x_{1}(t_{1}) & x_{2}(t_{1}) & ... & x_{m}(t_{1}) \\ 
+x_{1}(t_{2}) & x_{2}(t_{2})  & ...  & x_{m}(t_{2}) \\ 
+... & ... & ...  & ... \\ 
+x_{1}(t_{n}) & x_{2}(t_{n})  & ...  & x_{m}(t_{n}) 
+\end{bmatrix} = [x_{1}(\mathbf{t}), x_{2}(\mathbf{t}), ..., x_{m}(\mathbf{t})] = [\mathbf{x_{1}}, \mathbf{x_{2}}, ..., \mathbf{x_{m}}] \label{equ:sr-object-func-x} \\
+\mathbf{y} &= [y(t_{1}), y(t_{2}), ..., y(t_{n})]^{T} \label{equ:sr-object-func-y}\\
+\mathbf{P} &= \begin{bmatrix}
+add(\mathbf{x,y}) & sub(\mathbf{x,y}) & mul(\mathbf{x,y}) & divide(\mathbf{x,y}) \\ 
+sin(\mathbf{x}) & cos(\mathbf{x}) & log(\mathbf{x}, i) & pow(\mathbf{x}, i) \\ 
+max(\mathbf{x})& min(\mathbf{x}) & ... & ...  \\ 
+\end{bmatrix} \label{equ:sr-ops} \\
+\mathbf{\Psi} &= [\varphi_{1}, \varphi_{2}, ..., \varphi_{n_{b}}] \label{equ:sr-basefunc} 
+\end{align}
+\end{subequations}
+
+（2）基于符号回归的系统结构特征学习的框架
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{figures/sr-anomaly-framework-feature.png}
+\caption{基于符号回归的系统结构特征学习框架}
+\label{fig:sr-feature}
+\end{figure}
+
+图\ref{fig:sr-feature}是基于符号回归的系统结构特征学习框架，具体流程如下：
+\begin{enumerate}[1.]
+  \item 初始化：设定运算子集合$\mathbf{P}$，定义为\ref{equ:sr-ops}，作为基函数集合$\mathbf{\Psi}$的初始值。输入因变量$\mathbf{X}$作为操作数，以及对应的目标变量$\mathbf{y}$作为评估指标计算的参考。
+  \item 结构生成：从基函数集$\mathbf{\Psi}$优选若干个基函数作为运算子或操作数组合形成新的更复杂的基函数，并将其加入到当前基函数集合中。由此循环迭代，通过结构评价指标控制基函数集的大小和质量，当迭代触发域值时停止，并将基函数集合输入到下一环节。
+  \item 参数学习：对输入的基函数集$\mathbf{\Psi}$进行融合，即通过回归模型\ref{equ:sr-object-func}对目标变量进行估计，通过计算估计量$\mathbf{\hat{y}}$和实际观测量$\mathbf{y}$的误差来进行模型参数学习。即对模型\ref{equ:sr-object-func}的参数$\{a_{i}\},i=1,...,n_{b}$和$\mathbf{b}$进行学习。
+  \item 模型选择：通过模型评价指标对模型$f(\mathbf{X})$的质量进行评价，从而作出是否接受当前学习结果的决策，若对学习结果不满意则返回第2步，甚至可以返回第1步对模型输入进行调整。若对学习结果满意，则将当前模型输出。
+  \item 结束：最后框架的输出为一个或若干个优选的模型，定义为\ref{equ:sr-models}，并给出各模型的评价。这些模型可以表达系统的底层动态特性和运行机理，还可以为后期其他任务提供支持。
+\end{enumerate}
+\begin{subequations}
+\begin{align}
+\mathbf{\hat{y}} &= f(\mathbf{X}) = \mathbf{b} + \sum_{i=1}^{n_{b}}a_{i} \ast \mathbf{\Psi}_{i}(\mathbf{X}) =  \mathbf{b} + \sum_{i=1}^{n_{b}}a_{i} \ast \mathbf{\Psi}_{i}(\mathbf{\mathbf{x_{1}}, \mathbf{x_{2}}, ..., \mathbf{x_{m}}}) \label{equ:sr-object-func} \\
+\mathbf{M} &= [f_{1}, f_{2}, ..., f_{n_m}] \label{equ:sr-models} 
+\end{align}
+\end{subequations}
+
+（3）基于符号回归的系统结构特征学习的训练优化算法
+
+本文融合 FFX\cite{mcconaghy2011ffx} 和 Deap\cite{fortin2012deap}作为框架中结构生成以及参数学习引擎。前者用于生成初始解，而后者则用于对FFX产生的结果进行修剪以形成更简化的模型。核心思想如下：
+
+首先执行 FFX 算法获取初始解，有以下 3 步：
+\begin{enumerate}[1.]
+      \item 通过确定性的方式产生一个大规模的基函数集。
+      \item 识别最优的基函数并使用路径规整学习进行参数学习。
+      \item 通过最小化错误率和复杂度的目标过滤掉冗余候选函数。
+\end{enumerate}
+
+将 FFX 输出的最优模型集进行解析，由此得到基函数集作为Deap 遗传编程的初始输入，然后循环执行以下3个步骤，直到收敛为止：
+\begin{enumerate}[1.]
+      \item 繁殖步：基于当前候选集产生新的候选集(即子孙)并通过突变和交叉操作保证种群的多样性。
+      \item 评估步：对上一步产生的子孙进行评估。
+      \item 选择步：基于上一步的评估结果选择优秀的子孙构成下一代的种群。
+\end{enumerate}
+
+（4）基于符号回归的系统结构特征学习的评价指标
+
+1. 参数学习模块：以最小化误差平方和为优化目标，即最小化等式\ref{equ:sr-loss-rmse}。
+
+2. 模型选择模块，不同于一般的回归方法，本文同时考虑模型准确率和模型可解释性，分别由准确率因子和理解性因子度量。准确率因子为估计值和真实值的误差平方和，定义为等式\ref{equ:sr-loss-rmse}。理解性因子由模型规模度量，定义为\ref{equ:sr-loss-complexity}，由基函数个数表示，基函数越多说明函数越复杂进而表明可解释性越差。综上可得最终的模型选择度量指标\ref{equ:sr-loss}，其中参数$\lambda$用于平衡两个因素的重要程度。
+\begin{subequations}
+\begin{align}
+L &= RMSE + \lambda C \label{equ:sr-loss} , \lambda \in [0,1]\\
+RMSE &= \sqrt{\frac{\sum_{i=1}^{n} (\hat{y_{t_{i}}} - y_{t_{i}})^{2}}{n} } \label{equ:sr-loss-rmse} \\
+C &= size(f(\mathbf{X})) \label{equ:sr-loss-complexity}
+\end{align}
+\end{subequations}
+
+\section{系统结构特征应用}
+\label{sec:sr-application}
+
+一方面，系统结构特征揭示了多信号间的相互作用关系，可直接支持用户理解系统的运行机理；另一方面，系统结构特征是系统状态的直接反映，通过正常运行数据学习的结构表达式可作为系统的健康基线，支持在线实时异常检测。再者，值得一提的是系统结构特征还支持了本文第\ref{chap:critical-transection}章的动态系统稳定性分析。
+
+在当前的机车上，温度上升遵循指数方程是异常检测的主要依据，当传感器测量值超过预设阈值时车载监控系统将产生失效报告。然而轴承失效模式具有高度复杂性，基于固定阈值的异常检测难以具备复杂环境的自适应能力。由此，本文将通过正常运行数据离线学习的结构表达式作为系统运行的健康基线，设计在线实时异常检测框架，如图\ref{fig:sr-application}，主要有以下内容：
+
+（1） 数据采集
+
+列车运行过程产生的数据主要通过传感器进行采集。有两个主要的数据流向，一方面，采集的数据将会被传输到数据中心的数据库中进行有效存储；另一方面，实时感知数据将会作为在线实时异常检测的输入。
+
+（2） 在线实时异常检测
+\begin{enumerate}[1.]
+    \item 获取系统结构模型的生成数据作为健康基线：通过基于符号回归的系统结构特征学习框架提供的最优系统结构模型$f_{best}$，即通过等式\ref{equ:sr-predict}，估计最近$w$个时刻内的信号轨迹$\mathbf{\hat{y}}$作为健康基线。
+    \item 获取实时感知数据：通过传感器获取最近$w$个时刻内的实时监测数据$\mathbf{y}$。
+    \item 残差生成：$\mathbf{\hat{y}}$和$\mathbf{y}$被同时输送到残差生成器，残差生成器通过等式\ref{equ:sr-residual}计算系统实时偏差。
+    \item 误差估计：本文采用平均误差，定义为\ref{equ:sr-metrics}，主要基于以下考虑：（a）由轴承内部温度解析式\ref{eq:data-temp-generate}可知，系统失效时轴承温度升高$t_{raise}$遵循指数方程，平均误差足以发现异常；（b）整个在线异常检测框架需要满足实时计算，实际项目仍难以支持过于复杂的评估方法，可待将来进一步优化。
+    \item 异常决策：基于误差估计的结果，通过等式\ref{equ:sr-loss-alarm}作出是否报警的决策，其中$\alpha$为报警域值，根据实际应用需求而定。
+\end{enumerate}
+
+（3） 系统结构模型更新
+
+%整个在线框架的时间瓶颈主要在于传输延时，这是整个实际项目的系统化工程，本文不作展开。
+基于符号回归的系统结构特征学习框架，可以从数据中心的数据库中获取最新的历史正常运行数据对在线模型进行定期更新，形成异常检测框架的闭环，使其具有对复杂环境的自适应能力。
+\begin{subequations}
+\begin{align}
+\mathbf{\hat{y}} &= f_{best}(\mathbf{X}) = [y_{t_{1}}, y_{t_{2}}, ..., y_{t_{w}}] \label{equ:sr-predict}\\
+\mathbf{r} &= \hat{\mathbf{y}_{t_{i}}} - \mathbf{y}_{t_{i}}, i=1,2,...,w \label{equ:sr-residual} \\
+\gamma  &= \sqrt{\frac{\sum_{i=1}^{w} \mathbf{r}_{i}^{2}}{w} } \label{equ:sr-metrics} \\
+alarm &= \begin{cases}
+ 1 &  \gamma \geqslant \alpha   \\ 
+ 0 &   \gamma  < \alpha
+\end{cases} \label{equ:sr-loss-alarm}
+\end{align}
+\end{subequations}
+
+\begin{figure}[H]
+\centering
+\includegraphics[scale=0.5]{figures/sr-anomaly-framework-application.png}
+\caption{基于系统结构特征的在线实时异常检测框架}
+\label{fig:sr-application}
+\end{figure}
+
+\section{实验结果与分析}
+\label{sec:sr-experiment}
+
+% 当年算法实验的参数
+% 软件环境
+% (1) myeclipse-10.0
+% (2) jdk-7u7-windows-x64
+% (3) windows7旗舰版，64bit
+%  硬件环境
+% (1) CPU：AMD A6-4455M (双核)
+% (2) 主板：联想 Lenovo IdeaPad S405 (AMD A75/A70M (Hudson-D3/M3))
+% (3) 内存：8 GBytes
+% (4) 显卡：ATI/AMD Radeon HD 7500G, 512 MB of DDR3 SDRAM
+% (5) 硬盘：希捷 ST500LT012-9WS142
+
+实验硬件的主要参数：CPU，Intel(R) Xeon(R) CPU E5-2682，16核，2.50GHz；内存，235GB。代码使用 Python 3.6.0 实现，结合FFX和Deap工具包作为结构和参数学习引擎，FFX用于生成初始解，Deap用于对初始解进行剪枝。
+
+数据采集自HXD3型电力机车，环境如图\ref{fig:sr-data-collect}，数据说明见表\ref{tab:sr-variables}。本文在 1000 次正常运行过程中采集的数据集上进行交叉验证（针对一次运行，前50\%的数据作为训练集，后50\%作为验证集），学习6个轴温的结构特征，标号分别为 ZX\_WD\_1，ZX\_WD\_2，ZX\_WD\_3，ZX\_WD\_4，ZX\_WD\_5，ZX\_WD\_6。比如针对ZX\_WD\_1的学习，输入ZX\_WD\_1作为目标变量，因变量是表\ref{tab:sr-variables}中除了ZX\_WD\_1外的所有信号，初始基函数集定义为\ref{equ:sr-ops}；对于Deap中遗传算法的参数，种群大小为500，突变率为50\%，交叉率为100\%；训练迭代次数是100次；评价指标定义为\ref{equ:sr-loss}，$\lambda=1$，同时考虑误差因子和复杂度因子。
+
+实验展示一次运行的结果。
+\begin{itemize}
+  \item 表\ref{tab:sr-ffx-1}至表\ref{tab:sr-ffx-6}给出了由 FFX 学习的最好的（得分最高的）8个结构特征，分别对应6个轴温数据。从实验结果可以看到，结构特征表达式具有一定的可解释性但仍相当复杂；并且训练误差和测试误都维持在较低的水平，说明结构特征对数据具有良好的拟合能力。图\ref{fig:ffx_zx_wd}给出了基于最优结构特征的模拟结果，针对每个轴温数据，给出了真实值、预测值和误差，可以看到由结构表达式生成的预测值对真实值具有较好的拟合效果。
+  \item 表\ref{tab:sr-deap-1}至表\ref{tab:sr-deap-6}是经过 Deap剪枝后的结果，表中所列结构表达式为所有输出，可以看到相比于初始解，复杂度更低更便于理解，并且训练误差和测试误差都维持在较低水平。图\ref{fig:deap_zx_wd}给出了基于最优结构特征的模拟结果，相比于初始解能更好的表达数据的轨迹。
+\end{itemize}
+
+实验结果表明本文方法可有效学习多元信号间的线性/非线性关联关系，即结构特征；所学结构特征具有良好的解释性，对真实数据的运行轨迹具有很好的拟合效果。需要注意的是本文方法仍存在产生冗余运算子的情况，有进一步改进的空间，对此，Schmidt 等人已有初步尝试\cite{schmidt2009distilling}，值得深入。
+
+\begin{center}
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_1学习的前8个最优结构特征}
+\label{tab:sr-ffx-1}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_1学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+      35.0 & 1.354576 & 1.355095 & 0 \\
+      $25.5 + 0.00904*ZX\_WD\_5 * ZX\_WD\_6$ & 0.913770 & 0.914579 & 1 \\
+      $8.74 + 0.519*ZX\_WD\_6 + 0.291*ZX\_WD\_5$ & 0.753903 & 0.754591 & 2 \\
+      $6.03 + 0.539*ZX\_WD\_6 + 0.332*ZX\_WD\_5 + 0.0223*ZX\_HW\_2$ & 0.694735 & 0.695431 & 3 \\
+      $14.2 / (1.0 - 0.00703*ZX\_WD\_6 - 0.00690*ZX\_WD\_5 - 0.00302*ZX\_WD\_4 - 0.00103*ZX\_HW\_2)$ & 0.427490 & 0.427225 & 4 \\
+      $(14.6 - 0.0243*ZX\_HW\_1) / (1.0 - 0.00706*ZX\_WD\_5 - 0.00704*ZX\_WD\_6 - 0.00297*ZX\_WD\_4 - 0.00125*ZX\_HW\_2)$ & 0.421005 & 0.420607 & 5 \\
+      $-42.2 + 13.4*log10(ZX\_WD\_5) * log10(ZX\_WD\_6) + 9.72*log10(ZX\_WD\_5) * log10(ZX\_WD\_4) + 8.08*log10(ZX\_WD\_5) * log10(ZX\_HW\_2) + 0.691*log10(ZX\_WD\_2) * log10(ZX\_WD\_6) + 0.00511*ZX\_WD\_6^{2} - 0.00176*ZX\_HW\_1^{2}$ & 0.409125 & 0.409015 & 6 \\ 
+      $32.6 - 0.557*max(0,33.2-ZX\_WD\_5) + 0.255*max(0,ZX\_WD\_6-31.3) - 0.235*max(0,36.0-ZX\_WD\_4) + 0.212*max(0,ZX\_WD\_6-30.8) - 0.131*max(0,36.1-ZX\_HW\_2) + 0.101*max(0,ZX\_WD\_5-32.0) + 0.0911*max(0,ZX\_WD\_6-31.9) + 0.0778*ZX\_WD\_6 + 0.0591*max(0,ZX\_WD\_2-37.6)$ & 0.397894 & 0.398467 & 9 \\
+\bottomrule[1.5pt]
+\end{longtable}
+\end{center}
+
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_2学习的前8个最优结构特征}\label{tab:sr-ffx-2}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_2学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+      37.5 & 1.249001 & 1.249430 & 0 \\
+      $33.6 + 0.00339*ZX\_WD\_4 * ZX\_WD\_5$ & 1.114234 & 1.114899 & 1 \\
+      $22.5 + 0.00923*ZX\_WD\_4 * ZX\_WD\_5 + 0.00380*ZX\_WD\_3 * ZX\_WD\_5$ & 0.842994 & 0.844262 & 2 \\
+      $17.9 / (1.0 - 0.00748*ZX\_WD\_5 - 0.00444*ZX\_WD\_4 - 0.00341*ZX\_WD\_3)$ & 0.806176 & 0.807632 & 3 \\
+      $20.9 + 0.00870*ZX\_WD\_4 * ZX\_WD\_5 + 0.00399*ZX\_WD\_3 * ZX\_WD\_5 + 0.00286*ZX\_WD\_4 * ZX\_HW\_2 - 3.78e-6*ZD\_TFG^{2}$ & 0.757751 & 0.759322 & 4 \\
+      $-15.2 + 13.8*log10(ZX\_WD\_5) * log10(ZX\_WD\_4) + 7.53*log10(ZX\_WD\_5) * log10(ZX\_WD\_3) + 0.00250*ZX\_HW\_2^{2} + 0.00147*ZX\_WD\_4^{2} - 5.22e-6*ZD\_TFG^{2}$ & 0.740418 & 0.741918 & 5 \\
+      $-14.2 + 13.1*log10(ZX\_WD\_5) * log10(ZX\_WD\_4) + 7.59*log10(ZX\_WD\_5) * log10(ZX\_WD\_3) + 0.00293*ZX\_HW\_2^{2} + 0.00163*ZX\_WD\_4^{2} - 0.000125*ZD\_JHG - 5.62e-6*ZD\_TFG^{2}$ & 0.734446 & 0.735908 & 6 \\
+      $20.5 + 0.00813*ZX\_WD\_4 * ZX\_WD\_5 + 0.00373*ZX\_WD\_3 * ZX\_WD\_5 + 0.00320*ZX\_WD\_4 * ZX\_HW\_2 + 0.00108*ZX\_HW\_2^{2} + 0.000383*ZX\_WD\_3 * ZX\_HW\_2 - 0.000157*ZD\_JHG - 5.69e-6*ZD\_TFG^{2}$ & 0.731474 & 0.732970 & 7 \\ 
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_3学习的前8个最优结构特征}\label{tab:sr-ffx-3}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_3学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+      36.6 & 0.949297 & 0.949557 & 0 \\
+      $6.55 + 0.843*ZX\_WD\_4$ & 0.402844 & 0.401142 & 1 \\
+      $4.39 + 0.878*ZX\_WD\_4 + 0.0282*ZX\_HW\_1$ & 0.395118 & 0.393432 & 2 \\
+      $(19.0 - 0.00995*ZX\_WD\_5) / (1.0 - 0.0125*ZX\_WD\_4 - 0.00135*ZX\_HW\_1)$ & 0.393192 & 0.391551 & 3 \\
+      $(19.4 - 0.0342*ZX\_WD\_5) / (1.0 - 0.0123*ZX\_WD\_4 - 0.00169*ZX\_HW\_1 - 0.000162*ZX\_WD\_2)$ & 0.389710 & 0.388109 & 4 \\
+      $4.12 + 0.891*ZX\_WD\_4 + 0.0744*ZX\_HW\_1 - 0.0733*ZX\_WD\_5 + 0.0177*ZX\_WD\_2 - 0.00114*ZD\_LLJ$ & 0.386751 & 0.385115 & 5 \\
+      $17.7 / (1.0 - 0.0122*ZX\_WD\_4 - 0.00192*ZX\_HW\_1 - 0.00125*max(0,33.6-ZX\_WD\_5) - 0.000561*max(0,35.9-ZX\_WD\_1) - 0.000312*ZX\_WD\_2 - 0.000132*ZX\_WD\_6)$ & 0.385381 & 0.383703 & 6 \\
+      $3.51 + 0.920*ZX\_WD\_4 + 0.126*ZX\_HW\_1 - 0.120*ZX\_WD\_5 + 0.0374*ZX\_WD\_2 - 0.0306*ZX\_HW\_2 - 0.00734*ZX\_WD\_1 - 0.00178*ZD\_LLJ$ & 0.381686 & 0.380206 & 7 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_4学习的前8个最优结构特征}\label{tab:sr-ffx-4}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_4学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+     35.6 & 0.930301 & 0.931435 & 0 \\
+      $23.4 + 0.333*ZX\_WD\_3$ & 0.656427 & 0.657099 & 1 \\
+      $21.0 + 0.218*ZX\_WD\_3 * log10(ZX\_WD\_1) + 0.00185*ZX\_HW\_2 * ZX\_WD\_3$ & 0.453389 & 0.453613 & 2 \\
+      $16.3 + 0.260*ZX\_WD\_3 * log10(ZX\_WD\_1) + 0.00299*ZX\_HW\_2 * ZX\_WD\_3 + 0.000653*ZX\_WD\_3^{2}$ & 0.335498 & 0.335179 & 3 \\
+      $3.34 + 0.610*ZX\_WD\_3 + 0.124*ZX\_HW\_2 + 0.108*ZX\_WD\_1 + 0.0504*ZX\_WD\_2$ & 0.308872 & 0.308640 & 4 \\
+      $13.0 + 1.68*log10(ZX\_WD\_3) * log10(ZX\_WD\_1) + 0.173*ZX\_WD\_3 * log10(ZX\_WD\_1) + 0.00352*ZX\_HW\_2 * ZX\_WD\_3 + 0.00258*ZX\_WD\_3^{2} + 0.000618*ZX\_WD\_2^{2}$ & 0.308366 & 0.308182 & 5 \\
+      $3.26 + 0.616*ZX\_WD\_3 + 0.132*ZX\_HW\_2 + 0.113*ZX\_WD\_1 + 0.0526*ZX\_WD\_2 - 0.0209*ZX\_HW\_1 + 0.000356*ZD\_LLJ$ & 0.307278 & 0.307066 & 6 \\
+      $3.36 + 0.621*ZX\_WD\_3 + 0.143*ZX\_HW\_2 + 0.117*ZX\_WD\_1 + 0.0538*ZX\_WD\_2 - 0.0464*ZX\_HW\_1 - 0.000745*ZD\_SPEED + 0.000611*ZD\_LLJ$ & 0.306412 & 0.306220 & 7 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_5学习的前8个最优结构特征}\label{tab:sr-ffx-5}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_5学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+     32.1 & 0.868038 & 0.867657 & 0 \\
+      $22.2 + 0.283*ZX\_WD\_1$ & 0.571645 & 0.571623 & 1 \\
+      $18.5 + 0.330*ZX\_WD\_1 + 0.0625*ZX\_HW\_1$ & 0.503551 & 0.503674 & 2 \\
+      $18.3 / (1.0 - 0.00542*ZX\_WD\_1 - 0.00493*ZX\_HW\_1 - 0.00213*ZX\_WD\_2)$ & 0.409921 & 0.410352 & 3 \\
+      $31.4 + 0.316*max(0,ZX\_WD\_1-33.8) + 0.141*max(0,ZX\_HW\_1-32.3) + 0.129*max(0,ZX\_WD\_1-34.3) + 0.121*max(0,ZX\_HW\_1-31.8)$ & 0.398462 & 0.398821 & 4 \\
+      $31.4 + 0.318*max(0,ZX\_WD\_1-33.8) + 0.222*max(0,ZX\_HW\_1-32.3) + 0.145*max(0,ZX\_WD\_1-34.3) + 0.0893*max(0,ZX\_HW\_1-31.8) - 0.0554*max(0,36.8-ZX\_WD\_2)$ & 0.377175 & 0.377608 & 5 \\
+      $17.3 / (1.0 - 0.00577*ZX\_WD\_1 - 0.00521*ZX\_HW\_1 - 0.00403*max(0,35.0-ZX\_WD\_4) - 0.00299*max(0,33.3-ZX\_HW\_2) - 0.00143*ZX\_WD\_2 - 0.00107*ZX\_WD\_6)$ & 0.354132 & 0.354684 & 6 \\
+      $31.4 + 0.342*max(0,ZX\_WD\_1-33.8) + 0.223*max(0,ZX\_HW\_1-32.3) + 0.146*max(0,32.3-ZX\_HW\_2) + 0.118*max(0,ZX\_HW\_1-31.8) + 0.106*max(0,ZX\_WD\_1-34.3) - 0.0740*max(0,36.8-ZX\_WD\_2) + 0.0600*max(0,35.0-ZX\_WD\_4) - 0.0396*max(0,36.5-ZX\_WD\_1)$ & 0.349669 & 0.350131 & 8 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{9cm}<{\centering}*{3}{c}}
+\caption{基于FFX针对ZX\_WD\_6学习的前8个最优结构特征}\label{tab:sr-ffx-6}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endfirsthead
+\multicolumn{4}{c}{续表~\thetable\hskip1em 基于FFX针对ZX\_WD\_6学习的前8个最优结构特征}\\
+\toprule[1.5pt]
+模型 & 测试误差 & 训练误差 & 复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{4}{r}{续下页}
+\endfoot
+\endlastfoot
+    32.5 & 0.895700 & 0.895482 & 0 \\
+      $24.2 + 0.239*ZX\_WD\_1$ & 0.619888 & 0.619435 & 1 \\
+      $20.2 + 0.300*ZX\_WD\_1 + 0.0527*ZX\_HW\_2$ & 0.511317 & 0.510716 & 2 \\
+      $11.3 + 0.388*ZX\_WD\_1 + 0.122*ZX\_HW\_1 + 0.108*ZX\_HW\_2$ & 0.363861 & 0.362749 & 3 \\
+      $8.84 + 0.404*ZX\_WD\_1 + 0.147*ZX\_HW\_1 + 0.112*ZX\_HW\_2 + 0.0257*ZX\_WD\_3$ & 0.351119 & 0.350121 & 4 \\
+      $20.6 + 0.00430*ZX\_HW\_1 * ZX\_WD\_1 + 0.00323*ZX\_HW\_2 * ZX\_WD\_1 + 0.00161*ZX\_WD\_1^{2} + 0.000915*ZX\_WD\_3 * ZX\_WD\_1 + 4.54e-8*ZD\_JHG^{2}$ & 0.350564 & 0.349649 & 5 \\
+      $8.45 + 0.407*ZX\_WD\_1 + 0.152*ZX\_HW\_1 + 0.110*ZX\_HW\_2 + 0.0309*ZX\_WD\_3 + 0.000971*ZD\_SPEED + 0.000796*ZD\_LLJ$ & 0.349222 & 0.348054 & 6 \\
+      $8.37 + 5.21*log10(ZX\_HW\_1) * log10(ZX\_HW\_2) + 2.64*log10(ZX\_HW\_1) * log10(ZX\_WD\_3) - 0.959*log10(ZX\_WD\_2) + 0.00596*ZX\_WD\_1^{2} + 0.00206*ZD\_SPEED + 0.00197*ZD\_LLJ + 2.25e-7*ZD\_LCG^{2}$ & 0.344627 & 0.343397 & 7 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{4.3cm}<{\centering}p{4.3cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_1最优结构特征}\label{tab:sr-deap-1}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_1最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 10.039514 & 10.036110 & 2 \\
+      Add(2.422, ZX\_WD\_6) & $ZX\_WD\_6 + 2.422$ & 0.670062 & 0.670128 & 3 \\
+      Sub(ZX\_WD\_4, cos(ZX\_WD\_5)) & $ZX\_WD\_4 - cos(ZX\_WD\_5)$ & 0.643303 & 0.642128 & 4 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{4.3cm}<{\centering}p{4.3cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_2最优结构特征}\label{tab:sr-deap-2}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_2最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 12.576153 & 12.572426 & 2 \\
+      Add(1.0, ZX\_WD\_3) & $ZX\_WD\_3 + 1.0$ & 0.981440 & 0.981503 & 3 \\
+      Add(ZX\_WD\_3, 1.0) & $ZX\_WD\_3 + 1.0$ & 0.981440 & 0.981503 & 3 \\
+      Add(ZX\_WD\_5, sqrt(ZX\_WD\_5)) & $sqrt(ZX\_WD\_5) + ZX\_WD\_5$ & 0.953105 & 0.953624 & 4 \\
+      Add(sqrt(ZX\_WD\_5), ZX\_WD\_5)  & $sqrt(ZX\_WD\_5) + ZX\_WD\_5$ & 0.953105 & 0.953624 & 4 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{4.3cm}<{\centering}p{4.3cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_3最优结构特征}\label{tab:sr-deap-3}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_3最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 11.578368 & 11.573686 & 2 \\
+      Add(ZX\_WD\_4, 1.0) & $ZX\_WD\_4 + 1.0$ & 0.402275 & 0.400682 & 3 \\
+      Add(1.0, ZX\_WD\_4) & $ZX\_WD\_4 + 1.0$ & 0.402275 & 0.400682 & 3 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{4.3cm}<{\centering}p{4.3cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_4最优结构特征}\label{tab:sr-deap-4}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_4最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 10.619709 & 10.616273 & 2 \\
+      Add(3.0450, ZX\_WD\_6) & $ZX\_WD\_6 + 3.0450$ & 0.633333 & 0.633819 & 3 \\
+      sqrt(Mul(ZX\_WD\_3, ZX\_HW\_2)) & $sqrt(ZX\_HW\_2*ZX\_WD\_3)$ & 0.435390 & 0.435666 & 4 \\
+      Add(cos(log(ZX\_WD\_3)), ZX\_WD\_3) & $ZX\_WD\_3 + cos(log(ZX\_WD\_3))$ & 0.409323 & 0.407365 & 5 \\
+      Sub(ZX\_WD\_3, cos(Div(ZX\_WD\_3, ZD\_JHG))) & $ZX\_WD\_3 - cos(ZX\_WD\_3/ZD\_JHG)$ & 0.407747 & 0.403063 & 6 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{5cm}<{\centering}p{4.3cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_5最优结构特征}\label{tab:sr-deap-5}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_5最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 7.196478 & 7.190211 & 2 \\
+      Add(-0.4640, ZX\_WD\_6) & $ZX\_WD\_6 - 0.4640$ & 0.607207 & 0.607687 & 3 \\
+      Add(ZX\_WD\_6, log(cos(sin(log(cos(ZD\_TFG)))))) & $ZX\_WD\_6 + log(cos(sin(log(cos(ZD\_TFG)))))$ & 0.594462 & 0.595329 & 9 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{longtable}[c]{p{4cm}<{\centering}p{5.2cm}<{\centering}*{3}{c}}
+\caption{基于Deep剪枝后的ZX\_WD\_6最优结构特征}\label{tab:sr-deap-6}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度\\\midrule[1pt]
+\endfirsthead
+\multicolumn{5}{c}{续表~\thetable\hskip1em 基于Deep剪枝后的ZX\_WD\_6最优结构特征}\\
+\toprule[1.5pt]
+原模型 & 简化模型 & 测试误差 & 训练误差 &  复杂度 \\\midrule[1pt]
+\endhead
+\hline
+\multicolumn{5}{r}{续下页}
+\endfoot
+\endlastfoot
+      sqrt(ZD\_TFG) & $sqrt(ZD\_TFG)$ & 7.613762 & 7.609814 & 2 \\
+      Mul(ZX\_WD\_1, 0.9300) & $0.9300*ZX\_WD\_1$ & 0.595735 & 0.595721 & 3 \\
+\bottomrule[1.5pt]
+\end{longtable}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_1.png}
+    %\caption{ZX\_WD\_1}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_2.png}
+    %\caption{ZX\_WD\_2}
+\end{subfigure}\\
+\begin{subfigure}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_3.png}
+  %\caption{ZX\_WD\_3}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_4.png}
+    %\caption{ZX\_WD\_4}
+\end{subfigure}\\
+\begin{subfigure}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_5.png}
+  %\caption{ZX\_WD\_5}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/ffx-zx_wd_6.png}
+    %\caption{ZX\_WD\_6}
+\end{subfigure}
+\caption{基于FFX所学最优结构特征的模拟结果}
+\label{fig:ffx_zx_wd}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_1.png}
+    %%\caption{ZX\_WD\_1}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_2.png}
+    %%\caption{ZX\_WD\_2}
+\end{subfigure}\\
+\begin{subfigure}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_3.png}
+  %%\caption{ZX\_WD\_3}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_4.png}
+    %%\caption{ZX\_WD\_4}
+\end{subfigure}\\
+\begin{subfigure}[t]{0.48\textwidth}
+  \centering
+  \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_5.png}
+  %%\caption{ZX\_WD\_5}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[scale=0.45]{figures/sr/deap-zw_wd_6.png}
+    %%\caption{ZX\_WD\_6}
+\end{subfigure}
+\caption{基于Deap所学最优结构特征的模拟结果}
+\label{fig:deap_zx_wd}
+\end{figure}
+
+\section{小结}
+
+本章针对轴温为代表的设备正常状态数据开展机理挖掘研究。首先进行数据采集、预处理和分析工作。然后提出基于符号回归的系统结构特征学习方法，实验结果表明，所学结构特征具有很好的可解释性，表达了多元信号间的相互作用关系。最后将最优系统结构模型作为系统运行时的健康基线，设计了在线实时异常检测框架。实验结果表明系统结构模型对真实数据的运行轨迹具有很好的拟合能力，可作为系统正常状态的基准。值得一提的是基于符号回归的系统结构特征学习方法还支持了本文第\ref{chap:critical-transection}章的动态系统稳定性分析。
+
